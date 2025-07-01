@@ -58,14 +58,7 @@ def create_table():
     """)
     conn.commit()
 
-def ensure_column_exists():
-    existing_cols = pd.read_sql_query("PRAGMA table_info(petty_cash)", conn)
-    if "總金額" not in existing_cols["name"].tolist():
-        conn.execute("ALTER TABLE petty_cash ADD COLUMN 總金額 REAL")
-        conn.commit()
-
 create_table()
-ensure_column_exists()
 
 # 預設頁面為查詢資料
 page = st.sidebar.radio("請選擇功能", ["🔍 查詢資料", "📥 匯入資料"])
@@ -97,7 +90,10 @@ if page == "📥 匯入資料":
             df['上傳時間'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             total_rows = len(df)
-            df = df[df['日期'].notna() & df['日期'].str.match(r"^\d{2,3}\.\d{2}\.\d{2}$")]
+            df = df[
+                df['日期'].notna() &
+                df['日期'].str.match(r"^\d{2,3}\.\d{2}\.\d{2}$")
+            ]
             valid_rows = len(df)
             skipped_rows = total_rows - valid_rows
 
@@ -112,8 +108,22 @@ if page == "📥 匯入資料":
                 st.success(f"✅ 成功寫入資料，共 {len(df_to_save)} 筆")
                 if skipped_rows > 0:
                     st.warning(f"⚠️ 有 {skipped_rows} 筆資料因日期格式錯誤未匯入。")
+
         except Exception as e:
             st.error(f"❌ 讀取檔案失敗：{e}")
+
+    st.markdown("---")
+    st.markdown("## 🗑️ 刪除指定上傳時間的資料")
+    with st.expander("🗂 展開刪除選項"):
+        upload_times = pd.read_sql("SELECT DISTINCT 上傳時間 FROM petty_cash ORDER BY 上傳時間 DESC", conn)
+        if not upload_times.empty:
+            selected_time = st.selectbox("📅 請選擇要刪除的上傳時間", upload_times["上傳時間"].tolist())
+            if st.button("❌ 刪除該批資料"):
+                conn.execute("DELETE FROM petty_cash WHERE 上傳時間 = ?", (selected_time,))
+                conn.commit()
+                st.success(f"✅ 已刪除上傳時間為 {selected_time} 的所有資料")
+        else:
+            st.info("ℹ️ 尚無任何資料可刪除")
 
 elif page == "🔍 查詢資料":
     st.title("🔍 杏和零用金查詢")
