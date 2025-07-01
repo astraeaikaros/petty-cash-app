@@ -52,13 +52,20 @@ def create_table():
             陳交辦摘要 TEXT,
             各機構金額 REAL,
             自用金額 REAL,
-            総金額 REAL,
+            總金額 REAL,
             上傳時間 TEXT
         )
     """)
     conn.commit()
 
+def ensure_column_exists():
+    existing_cols = pd.read_sql_query("PRAGMA table_info(petty_cash)", conn)
+    if "總金額" not in existing_cols["name"].tolist():
+        conn.execute("ALTER TABLE petty_cash ADD COLUMN 總金額 REAL")
+        conn.commit()
+
 create_table()
+ensure_column_exists()
 
 # 預設頁面為查詢資料
 page = st.sidebar.radio("請選擇功能", ["🔍 查詢資料", "📥 匯入資料"])
@@ -70,7 +77,7 @@ if page == "📥 匯入資料":
     if uploaded_file:
         try:
             df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=3, dtype=str)
-            df = df.iloc[:, :8]  # 只保留前 8 欄
+            df = df.iloc[:, :8]
 
             df = df.rename(columns={
                 df.columns[0]: '日期',
@@ -89,12 +96,8 @@ if page == "📥 匯入資料":
             df['總金額'] = df['各機構金額'] + df['自用金額']
             df['上傳時間'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # 過濾出正確的日期格式資料
             total_rows = len(df)
-            df = df[
-                df['日期'].notna() &
-                df['日期'].str.match(r"^\d{2,3}\.\d{2}\.\d{2}$")
-            ]
+            df = df[df['日期'].notna() & df['日期'].str.match(r"^\d{2,3}\.\d{2}\.\d{2}$")]
             valid_rows = len(df)
             skipped_rows = total_rows - valid_rows
 
@@ -109,7 +112,6 @@ if page == "📥 匯入資料":
                 st.success(f"✅ 成功寫入資料，共 {len(df_to_save)} 筆")
                 if skipped_rows > 0:
                     st.warning(f"⚠️ 有 {skipped_rows} 筆資料因日期格式錯誤未匯入。")
-
         except Exception as e:
             st.error(f"❌ 讀取檔案失敗：{e}")
 
@@ -117,7 +119,6 @@ elif page == "🔍 查詢資料":
     st.title("🔍 杏和零用金查詢")
     df_result = pd.read_sql_query("SELECT * FROM petty_cash", conn)
 
-    # 日期轉換
     def convert_to_datetime(date_str):
         try:
             match = re.match(r"^(\d{2,3})\.(\d{1,2})\.(\d{1,2})$", date_str)
@@ -142,7 +143,6 @@ elif page == "🔍 查詢資料":
 
     df_result = df_result[(df_result['日期_轉換'] >= pd.to_datetime(start_date)) & (df_result['日期_轉換'] <= pd.to_datetime(end_date))]
 
-    # 新增姓名篩選
     unique_names = df_result['姓名'].dropna().unique().tolist()
     selected_name = st.selectbox("👤 請選擇姓名 (可選)", ["全部"] + unique_names)
     if selected_name != "全部":
@@ -172,11 +172,10 @@ elif page == "🔍 查詢資料":
         df_result['陳交辦摘要'].fillna('')
     )
 
-    # 顯示查詢結果
     st.write(f"🔎 查詢結果共 {len(df_result)} 筆")
     df_result['民國日期'] = df_result['日期_轉換'].apply(lambda x: f"{x.year - 1911}.{x.month:02}.{x.day:02}" if pd.notna(x) else "")
     df_display = df_result[['民國日期', '姓名', '摘要', '各機構金額', '自用金額', '總金額', '上傳時間']].copy()
-    df_display.index = df_display.index + 1  # 索引從 1 開始
+    df_display.index = df_display.index + 1
     st.dataframe(df_display, use_container_width=True)
 
     st.markdown("---")
